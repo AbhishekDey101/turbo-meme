@@ -18,26 +18,40 @@ st.markdown("Semantic cross-referencing and visual citation mapping across India
 def load_ai_model():
     return SentenceTransformer('all-MiniLM-L6-v2')
 
-# 3. Dynamic Data Loader (Supreme Court & SEBI)
+# 3. Dynamic Data Loader (Swapped Tribunals for Regulators)
 @st.cache_data
 def load_and_embed_data(database_choice):
     hf_token = st.secrets["HF_TOKEN"]
     model = load_ai_model()
     
-    if database_choice == "Supreme Court Judgments":
-        dataset = load_dataset("vaquill/open-india-law", "judgments", split="train", streaming=True, token=hf_token)
-        df = pd.DataFrame(list(dataset.take(1500)))
-        df['search_text'] = df.get('text', '').fillna('')
+    # Map the dropdown choices to the actual Hugging Face files that exist
+    file_map = {
+        "Supreme Court Judgments": {"split": "train", "data_files": None},
+        "SEBI (Securities Regulations)": {"split": "train", "data_files": "in_sebi_regulations.parquet"},
+        "MCA (Corporate Affairs)": {"split": "train", "data_files": "in_mca_regulations.parquet"},
+        "RBI (Banking Regulations)": {"split": "train", "data_files": "in_rbi_regulations.parquet"}
+    }
+    
+    config = file_map[database_choice]
+    
+    # Stream the selected database
+    if config["data_files"] is None:
+        dataset = load_dataset("vaquill/open-india-law", "judgments", split=config["split"], streaming=True, token=hf_token)
+    else:
+        dataset = load_dataset("vaquill/open-india-law", data_files=config["data_files"], split=config["split"], streaming=True, token=hf_token)
         
-    elif database_choice == "SEBI Regulations":
-        dataset = load_dataset("vaquill/open-india-law", data_files="in_sebi_regulations.parquet", split="train", streaming=True, token=hf_token)
-        df = pd.DataFrame(list(dataset.take(1500)))
-        df['search_text'] = df.get('title', '').fillna('') + " - " + df.get('section_title', '').fillna('') + ": " + df.get('text', '').fillna('')
+    df = pd.DataFrame(list(dataset.take(1500)))
+    
+    # Standardize the text for embedding based on the dataset's columns
+    if 'section_title' in df.columns:
+        df['search_text'] = df.get('title', '') + " - " + df.get('section_title', '') + ": " + df.get('text', '')
+    else:
+        df['search_text'] = df.get('text', '')
         
     embeddings = model.encode(df['search_text'].tolist())
     return df, embeddings
 
-# 4. Generate Interactive Citation Graph
+# 4. Generate Interactive Citation Graph (MVP Simulation)
 def generate_citation_graph(main_case_id):
     net = Network(height="350px", width="100%", bgcolor="#f8f9fa", font_color="black", notebook=False)
     net.add_node(str(main_case_id), label="Top Match\n" + str(main_case_id)[:15], color="#E64A19", size=25)
@@ -61,7 +75,7 @@ def generate_citation_graph(main_case_id):
 st.sidebar.header("Data Sources")
 db_selection = st.sidebar.radio(
     "Select Legal Database:",
-    ("Supreme Court Judgments", "SEBI Regulations")
+    ("Supreme Court Judgments", "SEBI (Securities Regulations)", "MCA (Corporate Affairs)", "RBI (Banking Regulations)")
 )
 
 st.sidebar.info("MVP Engine: Restricted to 1,500 semantic chunks per source to optimize for serverless memory limits.")
@@ -75,7 +89,7 @@ st.success(f"Engine Ready: Connected to {db_selection}")
 # 7. Search Interface
 query = st.text_area(
     "Enter Case Facts, Regulatory Issue, or Legal Concept",
-    placeholder="E.g., Does the alienation of state-owned infrastructure to private monopolies violate the Public Trust Doctrine under Article 39(b)?",
+    placeholder="E.g., What are the disclosure requirements for foreign direct investment in private infrastructure projects?",
     height=100
 )
 
@@ -87,7 +101,6 @@ if st.button("Search Database", type="primary"):
             top_indices = np.argsort(similarities)[::-1][:3]
             
             st.markdown("---")
-            
             col1, col2 = st.columns([1.5, 1])
             
             with col1:
@@ -95,11 +108,18 @@ if st.button("Search Database", type="primary"):
                 best_idx = top_indices[0]
                 match_score = round(similarities[best_idx] * 100, 2)
                 
-                doc_id = df.iloc[best_idx].get('case_id', df.iloc[best_idx].get('title', 'Unknown ID'))
-                chunk_text = df.iloc[best_idx].get('text', '')[:850] + " [...]"
-                
-                st.markdown(f"**Match Confidence:** `{match_score}%` | **ID:** `{doc_id}`")
-                st.info(f"**Relevant Holding / Text:**\n\n{chunk_text}")
+                # Format output differently depending on the database schema
+                if db_selection == "Supreme Court Judgments":
+                    doc_id = df.iloc[best_idx].get('case_id', df.iloc[best_idx].get('title', 'Unknown ID'))
+                    chunk_text = df.iloc[best_idx].get('text', '')[:850] + " [...]"
+                    st.markdown(f"**Match Confidence:** `{match_score}%` | **Case ID:** `{doc_id}`")
+                    st.info(f"**Relevant Holding:**\n\n{chunk_text}")
+                else:
+                    doc_id = df.iloc[best_idx].get('title', 'Unknown Act')
+                    section = df.iloc[best_idx].get('section_title', 'Unknown Section')
+                    chunk_text = df.iloc[best_idx].get('text', '')[:850] + " [...]"
+                    st.markdown(f"**Match Confidence:** `{match_score}%` | **Regulation:** `{doc_id}`")
+                    st.info(f"**Section: {section}**\n\n{chunk_text}")
             
             with col2:
                 st.markdown("### Citation Network")
@@ -112,10 +132,17 @@ if st.button("Search Database", type="primary"):
             
             for idx in top_indices[1:]:
                 match_score = round(similarities[idx] * 100, 2)
-                doc_id = df.iloc[idx].get('case_id', df.iloc[idx].get('title', 'Unknown ID'))
-                chunk_text = df.iloc[idx].get('text', '')[:600] + " [...]"
                 
-                with st.expander(f"Confidence: {match_score}% | ID: {doc_id}"):
-                    st.write(chunk_text)
+                if db_selection == "Supreme Court Judgments":
+                    doc_id = df.iloc[idx].get('case_id', df.iloc[idx].get('title', 'Unknown ID'))
+                    chunk_text = df.iloc[idx].get('text', '')[:600] + " [...]"
+                    with st.expander(f"Confidence: {match_score}% | Case ID: {doc_id}"):
+                        st.write(chunk_text)
+                else:
+                    doc_id = df.iloc[idx].get('title', 'Unknown Act')
+                    section = df.iloc[idx].get('section_title', 'Unknown Section')
+                    chunk_text = df.iloc[idx].get('text', '')[:600] + " [...]"
+                    with st.expander(f"Confidence: {match_score}% | Regulation: {doc_id} | Section: {section}"):
+                        st.write(chunk_text)
     else:
         st.warning("Please enter a legal issue to search.")
