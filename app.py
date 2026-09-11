@@ -29,6 +29,7 @@ def load_and_embed_data():
     model = load_ai_model()
     embeddings = model.encode(df['search_text'].tolist())
     return df, embeddings
+    
 # 3. Boot up the engine 
 with st.spinner("Initializing AI Engine & Loading Precedent... (This takes a minute on first boot)"):
     model = load_ai_model()
