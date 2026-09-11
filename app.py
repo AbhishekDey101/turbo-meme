@@ -1,26 +1,3 @@
-import sys
-from unittest.mock import MagicMock
-import importlib.abc
-import importlib.machinery
-
-# --- THE ULTIMATE BUG FIX FOR STREAMLIT ---
-# This intercepts ANY import call for 'torchvision' and dynamically 
-# creates a fake module on the fly. This stops Streamlit's file 
-# watcher from crashing when scanning the AI library.
-class MockFinder(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path, target=None):
-        if fullname.startswith("torchvision"):
-            class MockLoader(importlib.abc.Loader):
-                def create_module(self, spec):
-                    return MagicMock()
-                def exec_module(self, module):
-                    pass
-            return importlib.machinery.ModuleSpec(fullname, MockLoader())
-        return None
-
-sys.meta_path.insert(0, MockFinder())
-# ------------------------------------------
-
 import streamlit as st
 from datasets import load_dataset
 import pandas as pd
@@ -182,7 +159,7 @@ with tab1:
                         components.html(graph_html, height=420)
 
 # ==========================================
-# TAB 2: THE DRAFT ANALYZER
+# TAB 2: THE DRAFT Analyzer
 # ==========================================
 with tab2:
     st.markdown("### PDF Draft Analyzer")
