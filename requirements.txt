@@ -1,10 +1,8 @@
 streamlit
 datasets
 pandas
-sentence-transformers
 scikit-learn
 pyvis
 networkx
 PyPDF2
 google-generativeai
-torch
