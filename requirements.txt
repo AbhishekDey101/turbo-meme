@@ -3,3 +3,5 @@ datasets
 pandas
 sentence-transformers
 scikit-learn
+pyvis
+networkx
