@@ -1,28 +1,21 @@
 import sys
-from types import ModuleType
+from unittest.mock import MagicMock
 
-# --- PERMANENT FIX: STUB OUT TRANSFORMERS & TORCHVISION FOR STREAMLIT WATCHER ---
-class DummyModule(ModuleType):
-    def __getattr__(self, name):
-        return DummyModule(name)
-    def __call__(self, *args, **kwargs):
-        return DummyModule()
-
-stubs = [
-    'torchvision', 'torchvision.transforms', 'torchvision.transforms.v2', 'torchvision.transforms.v2.functional',
-    'transformers', 'transformers.models', 'transformers.models.ovis2', 'transformers.models.owlv2',
-    'transformers.models.oneformer', 'transformers.models.zoedepth', 'transformers.models.sam',
-    'transformers.image_processing_utils', 'transformers.image_transforms'
-]
-for mod in stubs:
-    sys.modules[mod] = DummyModule(mod)
-# -----------------------------------------------------------------------------
+# --- BUG FIX FOR STREAMLIT FILE WATCHER ---
+# This inserts a dummy module into the system memory so Streamlit 
+# doesn't crash when scanning the AI library for vision models.
+mock = MagicMock()
+sys.modules['torchvision'] = mock
+sys.modules['torchvision.transforms'] = mock
+sys.modules['torchvision.transforms.v2'] = mock
+sys.modules['torchvision.transforms.v2.functional'] = mock
+# ------------------------------------------
 
 import streamlit as st
 from datasets import load_dataset
 import pandas as pd
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from pyvis.network import Network
 import streamlit.components.v1 as components
@@ -31,11 +24,15 @@ import PyPDF2
 import google.generativeai as genai
 import os
 
-# 1. Setup Webpage Formatting
+# 1. Setup the Webpage formatting
 st.set_page_config(page_title="Abhishek Dey | Legal AI Suite", page_icon="⚖️", layout="wide")
 st.title("Abhishek Dey's Advanced Legal AI Suite")
 
-# 2. Initialize Gemini API
+# 2. Initialize Models and API
+@st.cache_resource
+def load_semantic_model():
+    return SentenceTransformer('all-MiniLM-L6-v2')
+
 def configure_genai():
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -43,10 +40,11 @@ def configure_genai():
     except:
         return None
 
-# 3. Dynamic Data Loader & Vectorizer
+# 3. Dynamic Data Loader
 @st.cache_data
 def load_and_embed_data(database_choice):
     hf_token = st.secrets["HF_TOKEN"]
+    model = load_semantic_model()
     
     file_map = {
         "Supreme Court Judgments": {"split": "train", "data_files": None},
@@ -65,14 +63,12 @@ def load_and_embed_data(database_choice):
     df = pd.DataFrame(list(dataset.take(1500)))
     
     if 'section_title' in df.columns:
-        df['search_text'] = df.get('title', '').fillna('') + " - " + df.get('section_title', '').fillna('') + ": " + df.get('text', '').fillna('')
+        df['search_text'] = df.get('title', '') + " - " + df.get('section_title', '') + ": " + df.get('text', '')
     else:
-        df['search_text'] = df.get('text', '').fillna('')
+        df['search_text'] = df.get('text', '')
         
-    vectorizer = TfidfVectorizer(max_features=5000, stop_words='english')
-    embeddings = vectorizer.fit_transform(df['search_text'].tolist())
-    
-    return df, embeddings, vectorizer
+    embeddings = model.encode(df['search_text'].tolist())
+    return df, embeddings
 
 # 4. Generate Interactive Citation Graph 
 def generate_citation_graph(main_doc_id):
@@ -103,7 +99,8 @@ db_selection = st.sidebar.radio(
 filter_repealed = st.sidebar.checkbox("Filter out Repealed/Overruled (Status Checker)", value=True)
 
 with st.spinner(f"Mounting {db_selection} into memory..."):
-    df, embeddings, vectorizer = load_and_embed_data(db_selection)
+    semantic_model = load_semantic_model()
+    df, embeddings = load_and_embed_data(db_selection)
     llm = configure_genai()
 
 # 6. Build the UI Tabs
@@ -118,9 +115,9 @@ with tab1:
     
     if st.button("Search & Synthesize", type="primary"):
         if query:
-            with st.spinner("Analyzing vectors and building network..."):
-                query_vector = vectorizer.transform([query])
-                similarities = cosine_similarity(query_vector, embeddings)[0]
+            with st.spinner("Analyzing semantic vectors and building network..."):
+                query_embedding = semantic_model.encode([query])
+                similarities = cosine_similarity(query_embedding, embeddings)[0]
                 
                 valid_indices = []
                 for idx in np.argsort(similarities)[::-1]:
@@ -167,11 +164,12 @@ with tab1:
                 with col2:
                     st.markdown("### Citation Network")
                     st.caption("Visualizing precedent flow for the top match.")
-                    best_idx = valid_indices[0]
-                    top_doc_id = df.iloc[best_idx].get('case_id', df.iloc[best_idx].get('title', 'Unknown ID'))
-                    
-                    graph_html = generate_citation_graph(top_doc_id)
-                    components.html(graph_html, height=420)
+                    if len(valid_indices) > 0:
+                        best_idx = valid_indices[0]
+                        top_doc_id = df.iloc[best_idx].get('case_id', df.iloc[best_idx].get('title', 'Unknown ID'))
+                        
+                        graph_html = generate_citation_graph(top_doc_id)
+                        components.html(graph_html, height=420)
 
 # ==========================================
 # TAB 2: THE DRAFT ANALYZER
@@ -187,8 +185,8 @@ with tab2:
                 pdf_reader = PyPDF2.PdfReader(uploaded_file)
                 draft_text = " ".join([page.extract_text() for page in pdf_reader.pages])
                 
-                query_vector = vectorizer.transform([draft_text[:2000]])
-                similarities = cosine_similarity(query_vector, embeddings)[0]
+                query_embedding = semantic_model.encode([draft_text[:2000]])
+                similarities = cosine_similarity(query_embedding, embeddings)[0]
                 best_idx = np.argsort(similarities)[::-1][0]
                 
                 st.markdown("### Draft Cross-Reference Results")
@@ -217,8 +215,8 @@ with tab3:
     if st.button("Find Counter-Arguments", type="primary"):
         if claim and llm:
             with st.spinner("Hunting for exceptions in the database..."):
-                query_vector = vectorizer.transform([claim])
-                similarities = cosine_similarity(query_vector, embeddings)[0]
+                query_embedding = semantic_model.encode([claim])
+                similarities = cosine_similarity(query_embedding, embeddings)[0]
                 top_indices = np.argsort(similarities)[::-1][:5]
                 
                 context = "\n".join([df.iloc[idx].get('text', '') for idx in top_indices])
