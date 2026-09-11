@@ -1,3 +1,19 @@
+import sys
+from types import ModuleType
+
+# --- STUB OUT TORCHVISION TO PREVENT STREAMLIT WATCHER / TRANSFORMERS CRASHES ---
+class DummyModule(ModuleType):
+    def __getattr__(self, name):
+        return DummyModule(name)
+    def __call__(self, *args, **kwargs):
+        return DummyModule()
+
+sys.modules['torchvision'] = DummyModule('torchvision')
+sys.modules['torchvision.transforms'] = DummyModule('torchvision.transforms')
+sys.modules['torchvision.transforms.v2'] = DummyModule('torchvision.transforms.v2')
+sys.modules['torchvision.transforms.v2.functional'] = DummyModule('torchvision.transforms.v2.functional')
+# -----------------------------------------------------------------------------
+
 import streamlit as st
 from datasets import load_dataset
 import pandas as pd
