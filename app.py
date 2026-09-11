@@ -1,14 +1,24 @@
 import sys
 from unittest.mock import MagicMock
+import importlib.abc
+import importlib.machinery
 
-# --- BUG FIX FOR STREAMLIT FILE WATCHER ---
-# This inserts a dummy module into the system memory so Streamlit 
-# doesn't crash when scanning the AI library for vision models.
-mock = MagicMock()
-sys.modules['torchvision'] = mock
-sys.modules['torchvision.transforms'] = mock
-sys.modules['torchvision.transforms.v2'] = mock
-sys.modules['torchvision.transforms.v2.functional'] = mock
+# --- THE ULTIMATE BUG FIX FOR STREAMLIT ---
+# This intercepts ANY import call for 'torchvision' and dynamically 
+# creates a fake module on the fly. This stops Streamlit's file 
+# watcher from crashing when scanning the AI library.
+class MockFinder(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname.startswith("torchvision"):
+            class MockLoader(importlib.abc.Loader):
+                def create_module(self, spec):
+                    return MagicMock()
+                def exec_module(self, module):
+                    pass
+            return importlib.machinery.ModuleSpec(fullname, MockLoader())
+        return None
+
+sys.meta_path.insert(0, MockFinder())
 # ------------------------------------------
 
 import streamlit as st
