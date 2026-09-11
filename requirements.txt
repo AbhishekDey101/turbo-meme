@@ -7,4 +7,5 @@ pyvis
 networkx
 PyPDF2
 google-generativeai
+torch
 torchvision
