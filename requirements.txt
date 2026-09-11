@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 streamlit
 datasets
 pandas
@@ -7,3 +8,5 @@ pyvis
 networkx
 PyPDF2
 google-generativeai
+torch
+torchvision
