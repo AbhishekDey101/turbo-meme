@@ -9,11 +9,10 @@ import streamlit.components.v1 as components
 import tempfile
 import PyPDF2
 import google.generativeai as genai
-import os
 
 # 1. Setup the Webpage formatting
-st.set_page_config(page_title="Abhishek Dey | Legal AI Suite", page_icon="⚖️", layout="wide")
-st.title("Abhishek Dey's Advanced Legal AI Suite")
+st.set_page_config(page_title="Advanced Legal AI Suite", page_icon="⚖️", layout="wide")
+st.title("Advanced Legal AI Suite")
 
 # 2. Initialize Models and API
 @st.cache_resource
@@ -116,7 +115,6 @@ with tab1:
                     if len(valid_indices) == 3: break
                 
                 st.markdown("---")
-                
                 col1, col2 = st.columns([1.5, 1])
                 
                 with col1:
@@ -159,7 +157,7 @@ with tab1:
                         components.html(graph_html, height=420)
 
 # ==========================================
-# TAB 2: THE DRAFT Analyzer
+# TAB 2: THE DRAFT ANALYZER
 # ==========================================
 with tab2:
     st.markdown("### PDF Draft Analyzer")
