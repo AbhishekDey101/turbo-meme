@@ -117,7 +117,6 @@ with tab1:
                 
                 st.markdown("---")
                 
-                # Split UI into two columns for the Graph integration
                 col1, col2 = st.columns([1.5, 1])
                 
                 with col1:
@@ -155,7 +154,6 @@ with tab1:
                     best_idx = valid_indices[0]
                     top_doc_id = df.iloc[best_idx].get('case_id', df.iloc[best_idx].get('title', 'Unknown ID'))
                     
-                    # Render the interactive graph
                     graph_html = generate_citation_graph(top_doc_id)
                     components.html(graph_html, height=420)
 
