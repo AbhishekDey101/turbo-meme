@@ -33,8 +33,11 @@ def load_and_embed_data(database_choice):
     hf_token = st.secrets["HF_TOKEN"]
     model = load_semantic_model()
     
+   # ADDED: Calcutta and Telangana High Court parquet files
     file_map = {
         "Supreme Court Judgments": {"split": "train", "data_files": None},
+        "Calcutta High Court": {"split": "train", "data_files": "in_calcutta_judgments.parquet"},
+        "Telangana High Court": {"split": "train", "data_files": "in_telangana_judgments.parquet"},
         "SEBI (Securities)": {"split": "train", "data_files": "in_sebi_regulations.parquet"},
         "MCA (Corporate Affairs)": {"split": "train", "data_files": "in_mca_regulations.parquet"}
     }
@@ -57,9 +60,17 @@ def load_and_embed_data(database_choice):
 
 # 4. Sidebar Configuration
 st.sidebar.header("Global Settings")
-db_selection = st.sidebar.radio("Active Database:", ("Supreme Court Judgments", "SEBI (Securities)", "MCA (Corporate Affairs)"))
+db_selection = st.sidebar.radio(
+    "Active Database:", 
+    (
+        "Supreme Court Judgments", 
+        "Calcutta High Court",
+        "Telangana High Court",
+        "SEBI (Securities)", 
+        "MCA (Corporate Affairs)"
+    )
+)
 filter_repealed = st.sidebar.checkbox("Filter out Repealed/Overruled (Status Checker)", value=True)
-
 with st.spinner(f"Mounting {db_selection} into memory..."):
     semantic_model = load_semantic_model()
     df, embeddings = load_and_embed_data(db_selection)
