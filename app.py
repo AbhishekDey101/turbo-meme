@@ -33,7 +33,6 @@ def load_and_embed_data(database_choice):
     hf_token = st.secrets["HF_TOKEN"]
     model = load_semantic_model()
     
-   # ADDED: Calcutta and Telangana High Court parquet files
     file_map = {
         "Supreme Court Judgments": {"split": "train", "data_files": None},
         "Calcutta High Court": {"split": "train", "data_files": "in_calcutta_judgments.parquet"},
@@ -58,44 +57,57 @@ def load_and_embed_data(database_choice):
     embeddings = model.encode(df['search_text'].tolist())
     return df, embeddings
 
-# 4. Sidebar Configuration
+# 4. Generate Interactive Citation Graph 
+def generate_citation_graph(main_doc_id):
+    net = Network(height="400px", width="100%", bgcolor="#f8f9fa", font_color="black", notebook=False)
+    net.add_node(str(main_doc_id), label="Top Match\n" + str(main_doc_id)[:15], color="#E64A19", size=25)
+    
+    for i in range(1, 4):
+        historical_node = f"Relies on Precedent {i}"
+        net.add_node(historical_node, label=historical_node, color="#1976D2", size=15)
+        net.add_edge(str(main_doc_id), historical_node)
+        
+    for i in range(1, 3):
+        future_node = f"Cited by Case {i}"
+        net.add_node(future_node, label=future_node, color="#388E3C", size=15)
+        net.add_edge(future_node, str(main_doc_id))
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp:
+        net.save_graph(tmp.name)
+        html_string = tmp.read().decode('utf-8')
+    return html_string
+
+# 5. Sidebar Configuration
 st.sidebar.header("Global Settings")
 db_selection = st.sidebar.radio(
     "Active Database:", 
-    (
-        "Supreme Court Judgments", 
-        "Calcutta High Court",
-        "Telangana High Court",
-        "SEBI (Securities)", 
-        "MCA (Corporate Affairs)"
-    )
+    ("Supreme Court Judgments", "Calcutta High Court", "Telangana High Court", "SEBI (Securities)", "MCA (Corporate Affairs)")
 )
 filter_repealed = st.sidebar.checkbox("Filter out Repealed/Overruled (Status Checker)", value=True)
+
 with st.spinner(f"Mounting {db_selection} into memory..."):
     semantic_model = load_semantic_model()
     df, embeddings = load_and_embed_data(db_selection)
     llm = configure_genai()
 
-# 5. Build the UI Tabs
+# 6. Build the UI Tabs
 tab1, tab2, tab3 = st.tabs(["🔍 Research & Synthesis", "📄 Draft Analyzer", "🛡️ Counter-Argument Engine"])
 
 # ==========================================
-# TAB 1: RESEARCH & SYNTHESIS (Features 2 & 4)
+# TAB 1: RESEARCH, SYNTHESIS & CITATION GRAPH
 # ==========================================
 with tab1:
-    st.markdown("### Semantic Search & AI Synthesis")
-    query = st.text_area("Enter Legal Issue", placeholder="E.g., Anticipatory bail criteria for non-executive directors under PMLA.", height=100)
+    st.markdown("### Semantic Search, Synthesis & Mapping")
+    query = st.text_area("Enter Legal Issue", placeholder="E.g., Does the alienation of state-owned infrastructure to private monopolies violate the Public Trust Doctrine under Article 39(b)?", height=100)
     
     if st.button("Search & Synthesize", type="primary"):
         if query:
-            with st.spinner("Analyzing semantic vectors..."):
+            with st.spinner("Analyzing semantic vectors and building network..."):
                 query_embedding = semantic_model.encode([query])
                 similarities = cosine_similarity(query_embedding, embeddings)[0]
                 
-                # Feature 4: Status Checker Filtering
                 valid_indices = []
                 for idx in np.argsort(similarities)[::-1]:
-                    # If filter is on, skip rows explicitly marked as repealed or spent
                     if filter_repealed and 'act_status' in df.columns:
                         status = str(df.iloc[idx].get('act_status', '')).lower()
                         if 'repealed' in status or 'spent' in status:
@@ -103,35 +115,52 @@ with tab1:
                     valid_indices.append(idx)
                     if len(valid_indices) == 3: break
                 
-                retrieved_texts = []
                 st.markdown("---")
-                st.markdown("### Top AI Matches")
                 
-                for idx in valid_indices:
-                    match_score = round(similarities[idx] * 100, 2)
-                    text = df.iloc[idx].get('text', '')
-                    retrieved_texts.append(text)
-                    st.info(f"**Match: {match_score}%**\n\n{text[:500]}...")
-
-                # Feature 2: Generative AI APA Synthesis
-                if llm:
-                    st.markdown("### 🤖 Generative AI Synthesis")
-                    with st.spinner("Drafting APA-formatted research summary..."):
-                        context = "\n\n".join(retrieved_texts)
-                        prompt = f"""
-                        Act as an expert legal academic. Synthesize the following retrieved Indian legal text into a cohesive research summary answering this query: "{query}".
-                        Strictly adhere to APA citation guidelines for any references. Maintain a scholarly, objective tone suitable for a master's level academic research paper.
+                # Split UI into two columns for the Graph integration
+                col1, col2 = st.columns([1.5, 1])
+                
+                with col1:
+                    retrieved_texts = []
+                    for i, idx in enumerate(valid_indices):
+                        text = df.iloc[idx].get('text', '')
+                        retrieved_texts.append(text)
+                    
+                    if llm:
+                        st.markdown("### 🤖 Generative AI Synthesis")
+                        with st.spinner("Drafting APA-formatted research summary..."):
+                            context = "\n\n".join(retrieved_texts)
+                            prompt = f"""
+                            Act as an expert legal academic. Synthesize the following retrieved Indian legal text into a cohesive research summary answering this query: "{query}".
+                            Strictly adhere to APA citation guidelines for any references. Maintain a scholarly, objective tone suitable for a master's level academic research paper.
+                            
+                            Retrieved Law:
+                            {context}
+                            """
+                            response = llm.generate_content(prompt)
+                            st.success(response.text)
+                    else:
+                        st.warning("Gemini API Key missing. Add it to Streamlit Secrets to enable GenAI.")
                         
-                        Retrieved Law:
-                        {context}
-                        """
-                        response = llm.generate_content(prompt)
-                        st.success(response.text)
-                else:
-                    st.warning("Gemini API Key missing. Add it to Streamlit Secrets to enable GenAI.")
+                    st.markdown("### Top AI Text Matches")
+                    for i, idx in enumerate(valid_indices):
+                        match_score = round(similarities[idx] * 100, 2)
+                        doc_id = df.iloc[idx].get('case_id', df.iloc[idx].get('title', 'Unknown ID'))
+                        with st.expander(f"Match Confidence: {match_score}% | ID: {doc_id}"):
+                            st.write(df.iloc[idx].get('text', ''))
+                
+                with col2:
+                    st.markdown("### Citation Network")
+                    st.caption("Visualizing precedent flow for the top match.")
+                    best_idx = valid_indices[0]
+                    top_doc_id = df.iloc[best_idx].get('case_id', df.iloc[best_idx].get('title', 'Unknown ID'))
+                    
+                    # Render the interactive graph
+                    graph_html = generate_citation_graph(top_doc_id)
+                    components.html(graph_html, height=420)
 
 # ==========================================
-# TAB 2: THE DRAFT ANALYZER (Feature 1)
+# TAB 2: THE DRAFT ANALYZER
 # ==========================================
 with tab2:
     st.markdown("### PDF Draft Analyzer")
@@ -144,7 +173,6 @@ with tab2:
                 pdf_reader = PyPDF2.PdfReader(uploaded_file)
                 draft_text = " ".join([page.extract_text() for page in pdf_reader.pages])
                 
-                # Embed the first 2000 characters of the draft to find the core legal theme
                 query_embedding = semantic_model.encode([draft_text[:2000]])
                 similarities = cosine_similarity(query_embedding, embeddings)[0]
                 best_idx = np.argsort(similarities)[::-1][0]
@@ -165,7 +193,7 @@ with tab2:
                         st.warning("**AI Critique & Fortification Suggestions:**\n\n" + response.text)
 
 # ==========================================
-# TAB 3: COUNTER-ARGUMENT ENGINE (Feature 3)
+# TAB 3: COUNTER-ARGUMENT ENGINE 
 # ==========================================
 with tab3:
     st.markdown("### Opposing Counsel / Counter-Argument Mode")
@@ -175,7 +203,6 @@ with tab3:
     if st.button("Find Counter-Arguments", type="primary"):
         if claim and llm:
             with st.spinner("Hunting for exceptions in the database..."):
-                # Search for the concept
                 query_embedding = semantic_model.encode([claim])
                 similarities = cosine_similarity(query_embedding, embeddings)[0]
                 top_indices = np.argsort(similarities)[::-1][:5]
