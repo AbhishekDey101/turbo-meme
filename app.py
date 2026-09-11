@@ -16,20 +16,33 @@ def load_ai_model():
     return SentenceTransformer('all-MiniLM-L6-v2')
 
 @st.cache_data
+@st.cache_data
 def load_and_embed_data():
-    # Fetch the token we just saved in Streamlit
     hf_token = st.secrets["HF_TOKEN"]
     
-    # Load 2,500 cases to safely fit in the free 1GB RAM limit, using the token for access
-    dataset = load_dataset("vaquill/open-india-law", "judgments", split="train[:2500]", token=hf_token)
-    df = dataset.to_pandas()
+    # Enable streaming so it doesn't try to download 53GB of files
+    dataset = load_dataset(
+        "vaquill/open-india-law", 
+        "judgments", 
+        split="train", 
+        streaming=True, 
+        token=hf_token
+    )
+    
+    # Grab the first 2500 cases from the stream
+    dataset_head = dataset.take(2500)
+    
+    # Convert the stream into a pandas dataframe
+    df = pd.DataFrame(list(dataset_head))
     df['search_text'] = df['text'].fillna('')
     
     # Generate vectors
     model = load_ai_model()
     embeddings = model.encode(df['search_text'].tolist())
-    return df, embeddings
     
+    return df, embeddings
+
+
 # 3. Boot up the engine 
 with st.spinner("Initializing AI Engine & Loading Precedent... (This takes a minute on first boot)"):
     model = load_ai_model()
