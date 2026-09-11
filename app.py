@@ -18,49 +18,30 @@ st.markdown("Semantic cross-referencing and visual citation mapping across India
 def load_ai_model():
     return SentenceTransformer('all-MiniLM-L6-v2')
 
-# 3. Dynamic Data Loader with Tribunal Expansion
+# 3. Dynamic Data Loader (Supreme Court & SEBI)
 @st.cache_data
 def load_and_embed_data(database_choice):
     hf_token = st.secrets["HF_TOKEN"]
     model = load_ai_model()
     
-    # Map the dropdown choices to the actual Hugging Face files
-    file_map = {
-        "Supreme Court Judgments": {"split": "train", "data_files": None},
-        "SEBI Regulations": {"split": "train", "data_files": "in_sebi_regulations.parquet"},
-        "NCLT (Company Law)": {"split": "train", "data_files": "in_nclt_judgments.parquet"},
-        "SAT (Securities Appellate Tribunal)": {"split": "train", "data_files": "in_sat_judgments.parquet"}
-    }
-    
-    config = file_map[database_choice]
-    
-    # Stream the selected database
-    if config["data_files"] is None:
-        dataset = load_dataset("vaquill/open-india-law", "judgments", split=config["split"], streaming=True, token=hf_token)
-    else:
-        dataset = load_dataset("vaquill/open-india-law", data_files=config["data_files"], split=config["split"], streaming=True, token=hf_token)
+    if database_choice == "Supreme Court Judgments":
+        dataset = load_dataset("vaquill/open-india-law", "judgments", split="train", streaming=True, token=hf_token)
+        df = pd.DataFrame(list(dataset.take(1500)))
+        df['search_text'] = df.get('text', '').fillna('')
         
-    df = pd.DataFrame(list(dataset.take(1500)))
-    
-    # Standardize the text for embedding based on the dataset's columns
-    if 'section_title' in df.columns:
-        df['search_text'] = df.get('title', '') + " - " + df.get('section_title', '') + ": " + df.get('text', '')
-    else:
-        df['search_text'] = df.get('text', '')
+    elif database_choice == "SEBI Regulations":
+        dataset = load_dataset("vaquill/open-india-law", data_files="in_sebi_regulations.parquet", split="train", streaming=True, token=hf_token)
+        df = pd.DataFrame(list(dataset.take(1500)))
+        df['search_text'] = df.get('title', '').fillna('') + " - " + df.get('section_title', '').fillna('') + ": " + df.get('text', '').fillna('')
         
     embeddings = model.encode(df['search_text'].tolist())
     return df, embeddings
 
-# 4. Generate Interactive Citation Graph (MVP Simulation)
+# 4. Generate Interactive Citation Graph
 def generate_citation_graph(main_case_id):
-    # Initialize a physics-based network graph
     net = Network(height="350px", width="100%", bgcolor="#f8f9fa", font_color="black", notebook=False)
-    
-    # Add the main search result node
     net.add_node(str(main_case_id), label="Top Match\n" + str(main_case_id)[:15], color="#E64A19", size=25)
     
-    # In a full production app, this would query a graph database. 
-    # For this MVP, we map structural nodes to represent the citation network.
     for i in range(1, 4):
         historical_node = f"Relies on Precedent {i}"
         net.add_node(historical_node, label=historical_node, color="#1976D2", size=15)
@@ -71,7 +52,6 @@ def generate_citation_graph(main_case_id):
         net.add_node(future_node, label=future_node, color="#388E3C", size=15)
         net.add_edge(future_node, str(main_case_id))
 
-    # Save to a temporary file and read HTML for Streamlit
     with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp:
         net.save_graph(tmp.name)
         html_string = tmp.read().decode('utf-8')
@@ -81,7 +61,7 @@ def generate_citation_graph(main_case_id):
 st.sidebar.header("Data Sources")
 db_selection = st.sidebar.radio(
     "Select Legal Database:",
-    ("Supreme Court Judgments", "SEBI Regulations", "NCLT (Company Law)", "SAT (Securities Appellate Tribunal)")
+    ("Supreme Court Judgments", "SEBI Regulations")
 )
 
 st.sidebar.info("MVP Engine: Restricted to 1,500 semantic chunks per source to optimize for serverless memory limits.")
@@ -108,7 +88,6 @@ if st.button("Search Database", type="primary"):
             
             st.markdown("---")
             
-            # Split the screen into two columns for the top result: Text on left, Graph on right
             col1, col2 = st.columns([1.5, 1])
             
             with col1:
@@ -125,14 +104,12 @@ if st.button("Search Database", type="primary"):
             with col2:
                 st.markdown("### Citation Network")
                 st.caption("Visualizing jurisdictional dependencies and precedent flow.")
-                # Render the interactive graph
                 graph_html = generate_citation_graph(doc_id)
                 components.html(graph_html, height=360)
             
             st.markdown("---")
             st.markdown("### Secondary Matches")
             
-            # Display remaining matches
             for idx in top_indices[1:]:
                 match_score = round(similarities[idx] * 100, 2)
                 doc_id = df.iloc[idx].get('case_id', df.iloc[idx].get('title', 'Unknown ID'))
