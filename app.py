@@ -17,8 +17,11 @@ def load_ai_model():
 
 @st.cache_data
 def load_and_embed_data():
-    # Loading 10,000 cases to safely fit in the free 1GB RAM limit
-    dataset = load_dataset("vaquill/open-india-law", "judgments", split="train[:2500]")
+    # Fetch the token we just saved in Streamlit
+    hf_token = st.secrets["HF_TOKEN"]
+    
+    # Load 2,500 cases to safely fit in the free 1GB RAM limit, using the token for access
+    dataset = load_dataset("vaquill/open-india-law", "judgments", split="train[:2500]", token=hf_token)
     df = dataset.to_pandas()
     df['search_text'] = df['text'].fillna('')
     
@@ -26,7 +29,6 @@ def load_and_embed_data():
     model = load_ai_model()
     embeddings = model.encode(df['search_text'].tolist())
     return df, embeddings
-
 # 3. Boot up the engine 
 with st.spinner("Initializing AI Engine & Loading Precedent... (This takes a minute on first boot)"):
     model = load_ai_model()
