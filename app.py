@@ -1,3 +1,23 @@
+import sys
+from types import ModuleType
+
+# --- PERMANENT FIX: STUB OUT TRANSFORMERS & TORCHVISION FOR STREAMLIT WATCHER ---
+class DummyModule(ModuleType):
+    def __getattr__(self, name):
+        return DummyModule(name)
+    def __call__(self, *args, **kwargs):
+        return DummyModule()
+
+stubs = [
+    'torchvision', 'torchvision.transforms', 'torchvision.transforms.v2', 'torchvision.transforms.v2.functional',
+    'transformers', 'transformers.models', 'transformers.models.ovis2', 'transformers.models.owlv2',
+    'transformers.models.oneformer', 'transformers.models.zoedepth', 'transformers.models.sam',
+    'transformers.image_processing_utils', 'transformers.image_transforms'
+]
+for mod in stubs:
+    sys.modules[mod] = DummyModule(mod)
+# -----------------------------------------------------------------------------
+
 import streamlit as st
 from datasets import load_dataset
 import pandas as pd
@@ -23,7 +43,7 @@ def configure_genai():
     except:
         return None
 
-# 3. Dynamic Data Loader & TF-IDF Vectorizer
+# 3. Dynamic Data Loader & Vectorizer
 @st.cache_data
 def load_and_embed_data(database_choice):
     hf_token = st.secrets["HF_TOKEN"]
@@ -49,7 +69,6 @@ def load_and_embed_data(database_choice):
     else:
         df['search_text'] = df.get('text', '').fillna('')
         
-    # Fit TF-IDF Vectorizer
     vectorizer = TfidfVectorizer(max_features=5000, stop_words='english')
     embeddings = vectorizer.fit_transform(df['search_text'].tolist())
     
