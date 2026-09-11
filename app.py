@@ -18,7 +18,7 @@ def load_ai_model():
 @st.cache_data
 def load_and_embed_data():
     # Loading 10,000 cases to safely fit in the free 1GB RAM limit
-    dataset = load_dataset("vaquill/open-india-law", "judgments", split="train[:10000]")
+    dataset = load_dataset("vaquill/open-india-law", "judgments", split="train[:2500]")
     df = dataset.to_pandas()
     df['search_text'] = df['text'].fillna('')
     
