@@ -1,3 +1,31 @@
+import sys
+import types
+
+# --- THE ABSOLUTE BULLETPROOF FIX ---
+# This custom module mimics torchvision to satisfy the AI library imports, 
+# but intentionally raises AttributeErrors for file paths so Streamlit's 
+# aggressive file watcher completely ignores it without crashing.
+class DummyModule(types.ModuleType):
+    def __getattr__(self, key):
+        if key in ("__path__", "__file__"):
+            raise AttributeError()
+        return None
+
+tv = DummyModule('torchvision')
+tv_transforms = DummyModule('torchvision.transforms')
+tv_v2 = DummyModule('torchvision.transforms.v2')
+tv_functional = DummyModule('torchvision.transforms.v2.functional')
+
+tv.transforms = tv_transforms
+tv_transforms.v2 = tv_v2
+tv_v2.functional = tv_functional
+
+sys.modules['torchvision'] = tv
+sys.modules['torchvision.transforms'] = tv_transforms
+sys.modules['torchvision.transforms.v2'] = tv_v2
+sys.modules['torchvision.transforms.v2.functional'] = tv_functional
+# ------------------------------------
+
 import streamlit as st
 from datasets import load_dataset
 import pandas as pd
