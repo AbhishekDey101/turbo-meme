@@ -1,10 +1,7 @@
 import sys
 import types
 
-# --- THE ABSOLUTE BULLETPROOF FIX ---
-# This custom module mimics torchvision to satisfy the AI library imports, 
-# but intentionally raises AttributeErrors for file paths so Streamlit's 
-# aggressive file watcher completely ignores it without crashing.
+# --- BULLETPROOF TRANSFORMERS / TORCHVISION MOCK ---
 class DummyModule(types.ModuleType):
     def __getattr__(self, key):
         if key in ("__path__", "__file__"):
@@ -24,7 +21,7 @@ sys.modules['torchvision'] = tv
 sys.modules['torchvision.transforms'] = tv_transforms
 sys.modules['torchvision.transforms.v2'] = tv_v2
 sys.modules['torchvision.transforms.v2.functional'] = tv_functional
-# ------------------------------------
+# --------------------------------------------------
 
 import streamlit as st
 from datasets import load_dataset
@@ -39,8 +36,8 @@ import PyPDF2
 import google.generativeai as genai
 
 # 1. Setup the Webpage formatting
-st.set_page_config(page_title="Advanced Legal AI Suite", page_icon="⚖️", layout="wide")
-st.title("Advanced Legal AI Suite")
+st.set_page_config(page_title="Abhishek Dey | Legal AI Suite", page_icon="⚖️", layout="wide")
+st.title("Abhishek Dey's Advanced Legal AI Suite")
 
 # 2. Initialize Models and API
 @st.cache_resource
@@ -50,8 +47,9 @@ def load_semantic_model():
 def configure_genai():
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        return genai.GenerativeModel('gemini-1.5-flash')
-    except:
+        # Updated to standard active flash endpoint
+        return genai.GenerativeModel('gemini-2.5-flash')
+    except Exception as e:
         return None
 
 # 3. Dynamic Data Loader
@@ -154,18 +152,21 @@ with tab1:
                     if llm:
                         st.markdown("### 🤖 Generative AI Synthesis")
                         with st.spinner("Drafting APA-formatted research summary..."):
-                            context = "\n\n".join(retrieved_texts)
-                            prompt = f"""
-                            Act as an expert legal academic. Synthesize the following retrieved Indian legal text into a cohesive research summary answering this query: "{query}".
-                            Strictly adhere to APA citation guidelines for any references. Maintain a scholarly, objective tone suitable for a master's level academic research paper.
-                            
-                            Retrieved Law:
-                            {context}
-                            """
-                            response = llm.generate_content(prompt)
-                            st.success(response.text)
+                            try:
+                                context = "\n\n".join(retrieved_texts)
+                                prompt = f"""
+                                Act as an expert legal academic. Synthesize the following retrieved Indian legal text into a cohesive research summary answering this query: "{query}".
+                                Strictly adhere to APA citation guidelines for any references. Maintain a scholarly, objective tone suitable for a master's level academic research paper.
+                                
+                                Retrieved Law:
+                                {context}
+                                """
+                                response = llm.generate_content(prompt)
+                                st.success(response.text)
+                            except Exception as gen_err:
+                                st.warning(f"Note: AI synthesis skipped due to API configuration. Precedent matching is fully operational below.")
                     else:
-                        st.warning("Gemini API Key missing. Add it to Streamlit Secrets to enable GenAI.")
+                        st.warning("Gemini API Key missing or invalid in Streamlit Secrets.")
                         
                     st.markdown("### Top AI Text Matches")
                     for i, idx in enumerate(valid_indices):
@@ -208,14 +209,17 @@ with tab2:
                 
                 if llm:
                     with st.spinner("Generating critique..."):
-                        prompt = f"""
-                        You are a senior advocate reviewing a junior's draft. Compare the draft excerpt against the established precedent. 
-                        Identify areas where the draft is strong, and flag areas where it contradicts the precedent.
-                        Draft Excerpt: {draft_text[:1500]}
-                        Precedent: {df.iloc[best_idx].get('text', '')}
-                        """
-                        response = llm.generate_content(prompt)
-                        st.warning("**AI Critique & Fortification Suggestions:**\n\n" + response.text)
+                        try:
+                            prompt = f"""
+                            You are a senior advocate reviewing a junior's draft. Compare the draft excerpt against the established precedent. 
+                            Identify areas where the draft is strong, and flag areas where it contradicts the precedent.
+                            Draft Excerpt: {draft_text[:1500]}
+                            Precedent: {df.iloc[best_idx].get('text', '')}
+                            """
+                            response = llm.generate_content(prompt)
+                            st.warning("**AI Critique & Fortification Suggestions:**\n\n" + response.text)
+                        except Exception:
+                            st.info("Precedent matched successfully. AI critique skipped due to API limit.")
 
 # ==========================================
 # TAB 3: COUNTER-ARGUMENT ENGINE 
@@ -228,21 +232,24 @@ with tab3:
     if st.button("Find Counter-Arguments", type="primary"):
         if claim and llm:
             with st.spinner("Hunting for exceptions in the database..."):
-                query_embedding = semantic_model.encode([claim])
-                similarities = cosine_similarity(query_embedding, embeddings)[0]
-                top_indices = np.argsort(similarities)[::-1][:5]
-                
-                context = "\n".join([df.iloc[idx].get('text', '') for idx in top_indices])
-                
-                prompt = f"""
-                You are opposing counsel. The plaintiff is arguing: "{claim}".
-                Based ONLY on the following Indian legal texts, formulate a counter-argument. Highlight any statutory exceptions, judicial discretion, or dissenting views that defeat the plaintiff's claim.
-                Legal Texts:
-                {context}
-                """
-                response = llm.generate_content(prompt)
-                
-                st.error("### 🛡️ The Counter-Argument")
-                st.write(response.text)
+                try:
+                    query_embedding = semantic_model.encode([claim])
+                    similarities = cosine_similarity(query_embedding, embeddings)[0]
+                    top_indices = np.argsort(similarities)[::-1][:5]
+                    
+                    context = "\n".join([df.iloc[idx].get('text', '') for idx in top_indices])
+                    
+                    prompt = f"""
+                    You are opposing counsel. The plaintiff is arguing: "{claim}".
+                    Based ONLY on the following Indian legal texts, formulate a counter-argument. Highlight any statutory exceptions, judicial discretion, or dissenting views that defeat the plaintiff's claim.
+                    Legal Texts:
+                    {context}
+                    """
+                    response = llm.generate_content(prompt)
+                    
+                    st.error("### 🛡️ The Counter-Argument")
+                    st.write(response.text)
+                except Exception:
+                    st.warning("Could not generate counter-argument via AI. Check your Gemini API key.")
         elif not llm:
              st.warning("Gemini API Key missing.")
